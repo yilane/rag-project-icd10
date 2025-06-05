@@ -16,7 +16,7 @@
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   FastAPI服务   │    │   向量化模型     │    │   Milvus数据库   │
+│   FastAPI服务   |    │   向量化模型     │    │   Milvus数据库   │
 │   (API接口)     │────│  (E5-Large)     │────│  (向量存储)     │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                                              │
@@ -260,7 +260,7 @@ EMBEDDING_DEVICE=auto
 
 # Milvus配置
 MILVUS_MODE=local
-MILVUS_DB_PATH=./db/milvus
+MILVUS_DB_PATH=./db/milvus_icd10.db
 MILVUS_COLLECTION_NAME=icd10
 
 # API配置
@@ -372,7 +372,7 @@ print(f'提取诊断: {diagnoses}')
    ```bash
    # 使用本地文件模式
    export MILVUS_MODE=local
-   export MILVUS_DB_PATH="./db/milvus"
+   export MILVUS_DB_PATH="./db/milvus_icd10.db"
    ```
 
 3. **多诊断分割效果不佳**

@@ -1,0 +1,373 @@
+# ICD-10 诊断标准化RAG系统 .gitignore
+
+# ========================
+# 环境变量和配置文件
+# ========================
+.env
+.env.local
+.env.production
+.env.staging
+.env.development
+config/local.py
+config/production.py
+
+# ========================
+# Python 相关
+# ========================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ========================
+# 机器学习和AI相关
+# ========================
+# HuggingFace模型缓存
+.cache/
+huggingface/
+transformers_cache/
+sentence_transformers/
+.sentence_transformers/
+
+# 模型文件（通常很大）
+*.pkl
+*.joblib
+*.model
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.h5
+*.weights
+
+# 数据集和向量文件
+*.npy
+*.npz
+*.vec
+*.embeddings
+
+# TensorBoard日志
+logs/tensorboard/
+runs/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Weights & Biases
+wandb/
+
+# ========================
+# 数据库相关
+# ========================
+# Milvus数据库文件
+db/
+*.db
+*.sqlite
+*.sqlite3
+milvus_data/
+milvus.db
+milvus_lite.db
+
+# 数据文件备份
+*.backup
+*.bak
+*.dump
+
+# ========================
+# 日志文件
+# ========================
+logs/
+*.log
+*.log.*
+log/
+*.out
+*.err
+
+# ========================
+# 临时文件和测试输出
+# ========================
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# 测试文件
+test_*.py
+*_test.py
+test_output/
+test_results/
+.pytest_cache/
+
+# 性能测试输出
+benchmark_results/
+performance_test/
+
+# ========================
+# IDE和编辑器相关
+# ========================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+.vimrc
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ========================
+# 操作系统相关
+# ========================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ========================
+# 项目特定文件
+# ========================
+# API密钥和认证文件
+*.key
+*.pem
+*.crt
+*.p12
+credentials.json
+service-account.json
+
+# 数据文件（可选择性忽略）
+# data/processed/
+# data/interim/
+# data/external/
+
+# 用户上传文件
+uploads/
+user_data/
+
+# 缓存文件
+cache/
+.cache/
+
+# 配置覆盖文件
+local_config.py
+override_config.py
+
+# 部署相关
+docker-compose.override.yml
+.dockerignore
+Dockerfile.local
+
+# Kubernetes
+*.kubeconfig
+
+# 监控和指标
+metrics/
+monitoring/
+
+# 备份文件
+backup/
+*.backup
+
+# ========================
+# 文档相关
+# ========================
+# 生成的文档
+docs/build/
+docs/_build/
+
+# ========================
+# 其他
+# ========================
+# 压缩文件
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# 大文件占位符
+*.gitlfs
+
+# 节点模块（如果有前端组件）
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log* 

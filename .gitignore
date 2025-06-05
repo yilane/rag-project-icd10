@@ -190,18 +190,6 @@ mlartifacts/
 # Weights & Biases
 wandb/
 
-# ========================
-# 数据库相关
-# ========================
-# Milvus数据库文件
-db/
-*.db
-*.sqlite
-*.sqlite3
-milvus_data/
-milvus.db
-milvus_lite.db
-
 # 数据文件备份
 *.backup
 *.bak

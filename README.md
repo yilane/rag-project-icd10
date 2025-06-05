@@ -206,7 +206,6 @@ rag-project-icd10/
 ├── requirements.txt             # Python依赖包
 ├── README.md                    # 项目说明文档
 ├── README_MILVUS_CONFIG.md      # Milvus配置详细说明
-├── icd_prd.md                   # 产品需求文档
 ├── data/                        # 数据目录
 │   └── ICD_10v601.csv          # 原始ICD数据
 ├── db/                          # Milvus数据存储
@@ -429,10 +428,6 @@ curl http://localhost:8000/stats
 4. 推送分支 (`git push origin feature/amazing-feature`)
 5. 创建Pull Request
 
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
-
 ## 🙏 致谢
 
 - **HuggingFace** - 提供优秀的多语言E5模型
@@ -442,7 +437,7 @@ curl http://localhost:8000/stats
 
 ## 📞 联系方式
 
-如有问题或建议，请提交 [Issue](https://github.com/your-repo/issues) 或联系项目维护者。
+如有问题或建议，请提交 [Issue](https://github.com/yilane/rag-project-icd10/issues) 或联系项目维护者。
 
 ---
 

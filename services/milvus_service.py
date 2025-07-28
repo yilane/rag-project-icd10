@@ -170,7 +170,7 @@ class MilvusService:
                 enable_dynamic_field=True
             )
             
-            # 添加字段（简化版）
+            # 添加字段（优化版：支持层级关系）
             schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True, auto_id=True)
             schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=self.dimension)
             schema.add_field(field_name="code", datatype=DataType.VARCHAR, max_length=50)
@@ -178,6 +178,12 @@ class MilvusService:
             schema.add_field(field_name="has_complication", datatype=DataType.BOOL)
             schema.add_field(field_name="main_code", datatype=DataType.VARCHAR, max_length=50)
             schema.add_field(field_name="secondary_code", datatype=DataType.VARCHAR, max_length=50)
+            
+            # 层级关系字段
+            schema.add_field(field_name="level", datatype=DataType.INT32)  # 层级深度: 1=主类,2=亚类,3=细分类
+            schema.add_field(field_name="parent_code", datatype=DataType.VARCHAR, max_length=50)  # 父级编码
+            schema.add_field(field_name="category_path", datatype=DataType.VARCHAR, max_length=200)  # 完整分类路径
+            schema.add_field(field_name="semantic_text", datatype=DataType.VARCHAR, max_length=1000)  # 增强的语义文本
             
             # 定义索引参数
             index_params = self.client.prepare_index_params()
@@ -227,7 +233,12 @@ class MilvusService:
                         "preferred_zh": record.get("preferred_zh", ""),
                         "has_complication": record.get("has_complication", False),
                         "main_code": main_code,
-                        "secondary_code": secondary_code
+                        "secondary_code": secondary_code,
+                        # 层级字段
+                        "level": record.get("level", 1),
+                        "parent_code": record.get("parent_code", ""),
+                        "category_path": record.get("category_path", ""),
+                        "semantic_text": record.get("semantic_text", "")
                     })
                
                 # 验证数据完整性
@@ -270,23 +281,37 @@ class MilvusService:
                 collection_name=self.collection_name,
                 data=[query_vector.tolist()],
                 limit=top_k,
-                output_fields=["code", "preferred_zh", "has_complication", "main_code", "secondary_code"]
+                output_fields=["code", "preferred_zh", "has_complication", "main_code", "secondary_code", "level", "parent_code", "category_path", "semantic_text"]
             )
             
             # 处理结果
             candidates = []
             if results and len(results) > 0:
                 for hit in results[0]:
+                    # 层级权重调整
+                    base_score = float(hit.get("distance", 0))
+                    level = hit.get("level", 1)
+                    level_weight = self._calculate_level_weight(level)
+                    adjusted_score = base_score * level_weight
+                    
                     candidates.append({
                         "code": hit.get("code"),
                         "title": hit.get("preferred_zh"),
-                        "score": float(hit.get("distance", 0)),
+                        "score": adjusted_score,
+                        "original_score": base_score,
                         "metadata": {
                             "has_complication": hit.get("has_complication", False),
                             "main_code": hit.get("main_code", ""),
-                            "secondary_code": hit.get("secondary_code", "")
+                            "secondary_code": hit.get("secondary_code", ""),
+                            "level": level,
+                            "parent_code": hit.get("parent_code", ""),
+                            "category_path": hit.get("category_path", ""),
+                            "semantic_text": hit.get("semantic_text", "")
                         }
                     })
+                
+                # 按调整后的分数重新排序
+                candidates.sort(key=lambda x: x["score"], reverse=True)
             
             return candidates
             
@@ -522,3 +547,12 @@ class MilvusService:
                 "error": str(e),
                 "timestamp": __import__("datetime").datetime.now().isoformat()
             } 
+    def _calculate_level_weight(self, level: int) -> float:
+        """计算层级权重"""
+        # 主类别权重更高，细分类权重较低
+        level_weights = {
+            1: 1.2,  # 主类别
+            2: 1.0,  # 亚类别  
+            3: 0.8   # 细分类
+        }
+        return level_weights.get(level, 1.0)

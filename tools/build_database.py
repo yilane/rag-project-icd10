@@ -60,7 +60,7 @@ class DatabaseBuilder:
             raise
     
     def load_csv_data(self, input_file: str) -> List[Dict]:
-        """直接从CSV文件加载数据"""
+        """从CSV文件加载数据并解析层级关系"""
         logger.info(f"开始加载数据: {input_file}")
         
         try:
@@ -70,6 +70,8 @@ class DatabaseBuilder:
             
             # 转换为标准格式的记录列表
             records = []
+            parent_info = {}  # 存储父级信息用于建立层级关系
+            
             for idx, row in df.iterrows():
                 # 简单数据转换，不进行复杂的清洗
                 code = str(row.get('code', '')).strip()
@@ -91,23 +93,103 @@ class DatabaseBuilder:
                         secondary_code = parts[1].replace('*', '').strip()
                         has_complication = True
                 
-                # 构建记录（简化版）
+                # 解析层级关系
+                level, parent_code, category_path = self._parse_hierarchy(code, parent_info)
+                
+                # 构建增强的语义文本
+                semantic_text = self._build_semantic_text(code, disease, category_path, parent_info)
+                
+                # 构建记录（优化版）
                 record = {
                     "code": code,
                     "preferred_zh": disease,
                     "main_code": main_code,
                     "secondary_code": secondary_code,
-                    "has_complication": has_complication
+                    "has_complication": has_complication,
+                    "level": level,
+                    "parent_code": parent_code,
+                    "category_path": category_path,
+                    "semantic_text": semantic_text
                 }
                 
                 records.append(record)
+                
+                # 存储父级信息供后续使用
+                parent_info[code] = disease
             
             logger.info(f"转换完成，获得 {len(records)} 条有效记录")
+            self._log_hierarchy_stats(records)
             return records
             
         except Exception as e:
             logger.error(f"数据加载失败: {e}")
             raise
+    
+    def _parse_hierarchy(self, code: str, parent_info: Dict[str, str]) -> tuple:
+        """解析ICD-10编码的层级关系"""
+        # 判断层级
+        if '.' not in code:
+            # 主类别（如A00）
+            level = 1
+            parent_code = ""
+            category_path = code
+        elif code.count('.') == 1 and len(code.split('.')[1]) <= 1:
+            # 亚类别（如A00.0）
+            level = 2
+            parent_code = code.split('.')[0]
+            category_path = f"{parent_code} > {code}"
+        else:
+            # 细分类（如A00.001）
+            level = 3
+            parts = code.split('.')
+            if len(parts[1]) >= 3:
+                # 父级是亚类别
+                parent_code = f"{parts[0]}.{parts[1][0]}"
+                category_path = f"{parts[0]} > {parent_code} > {code}"
+            else:
+                # 父级是主类别
+                parent_code = parts[0]
+                category_path = f"{parent_code} > {code}"
+        
+        return level, parent_code, category_path
+    
+    def _build_semantic_text(self, code: str, disease: str, category_path: str, parent_info: Dict[str, str]) -> str:
+        """构建增强的语义文本"""
+        semantic_parts = [disease]
+        
+        # 添加父级语义信息
+        path_codes = category_path.split(' > ')
+        for path_code in path_codes[:-1]:  # 排除当前编码
+            if path_code in parent_info:
+                parent_disease = parent_info[path_code]
+                if parent_disease not in semantic_parts:
+                    semantic_parts.append(parent_disease)
+        
+        # 添加编码信息
+        semantic_parts.append(f"ICD-10: {code}")
+        
+        return " | ".join(semantic_parts)
+    
+    def _log_hierarchy_stats(self, records: List[Dict]):
+        """记录层级统计信息"""
+        level_counts = {1: 0, 2: 0, 3: 0}
+        for record in records:
+            level = record.get('level', 0)
+            if level in level_counts:
+                level_counts[level] += 1
+        
+        logger.info(f"层级统计 - 主类: {level_counts[1]}, 亚类: {level_counts[2]}, 细分类: {level_counts[3]}")
+    
+    def _calculate_optimal_batch_size(self, total_records: int) -> int:
+        """根据数据量动态计算最优批处理大小"""
+        if total_records < 1000:
+            return 32
+        elif total_records < 10000:
+            return 64
+        elif total_records < 50000:
+            return 128
+        else:
+            return 256
 
     def vectorize_and_index(self, records: List[Dict]) -> bool:
         """向量化数据并建立索引"""
@@ -115,7 +197,7 @@ class DatabaseBuilder:
         
         try:
             # 批量向量化  
-            batch_size = 50  # 批处理大小
+            batch_size = self._calculate_optimal_batch_size(len(records))  # 动态批处理大小
             total_batches = (len(records) + batch_size - 1) // batch_size
             
             logger.info(f"开始批量向量化，每批 {batch_size} 条，共 {total_batches} 批")
@@ -128,13 +210,15 @@ class DatabaseBuilder:
                 
                 logger.info(f"正在处理第 {batch_idx + 1}/{total_batches} 批，记录 {start_idx + 1}-{end_idx} 共 {current_batch_size} 条")
                 
-                # 为每条记录生成向量
+                # 为每条记录生成向量（使用增强的语义文本）
                 batch_embeddings = []
                 failed_count = 0
                 
                 for i, record in enumerate(batch_records):
                     try:
-                        embedding = self.embedding_service.encode_icd_record(record)
+                        # 使用增强的语义文本进行向量化
+                        semantic_text = record.get('semantic_text', record.get('preferred_zh', ''))
+                        embedding = self.embedding_service.encode_query(semantic_text)
                         batch_embeddings.append(embedding)
                         
                         # 每处理100条显示一次进度

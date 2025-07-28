@@ -22,7 +22,7 @@ class Candidate(BaseModel):
     """候选结果模型"""
     code: str = Field(..., description="ICD-10编码")
     title: str = Field(..., description="诊断名称")
-    score: float = Field(..., description="相似度分数", ge=0.0, le=1.0)
+    score: float = Field(..., description="相似度分数", ge=0.0)
 
 
 class DiagnosisMatch(BaseModel):

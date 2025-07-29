@@ -12,7 +12,7 @@ load_dotenv()
 from models.icd_models import (
     QueryRequest, QueryResponse, StandardizeRequest, StandardizeResponse,
     EmbeddingRequest, EmbeddingResponse, HealthCheckResponse,
-    DiagnosisMatch, Candidate
+    DiagnosisMatch, Candidate, convert_numpy_types
 )
 from services.embedding_service import EmbeddingService
 from services.milvus_service import MilvusService
@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
         
         logger.info("✅ LLM服务初始化完成")
         
-        # 初始化多诊断服务（使用规则方案）
+        # 初始化多诊断服务
         logger.info("🔍 初始化多诊断服务...")
         multi_diagnosis_service = MultiDiagnosisService(embedding_service, milvus_service)
         logger.info("✅ 多诊断服务初始化完成")
@@ -195,7 +195,10 @@ async def _release_milvus_collections():
                     logger.info(f"ℹ️  集合 {collection_name} 未完全加载，无需释放")
                     
             except Exception as collection_err:
-                logger.warning(f"处理集合 {collection_name} 时出错: {collection_err}")
+                if "ConnectionNotExistException" in str(collection_err):
+                    logger.info(f"ℹ️  集合 {collection_name} 连接已断开，无需释放")
+                else:
+                    logger.warning(f"处理集合 {collection_name} 时出错: {collection_err}")
             
             # 断开所有Milvus连接
             try:
@@ -273,62 +276,72 @@ async def health_check():
 
 @app.post("/query", response_model=QueryResponse, tags=["向量搜索"])
 async def query_similar(request: QueryRequest):
-    """基于向量相似度的ICD编码查询（支持自动多诊断识别）"""
+    """基于向量相似度的ICD编码查询（使用完整多诊断服务）"""
     try:
         logger.info(f"收到查询请求: {request.text}")
         
         if not embedding_service or not milvus_service or not multi_diagnosis_service:
             raise HTTPException(status_code=503, detail="服务未就绪")
         
-        # 首先检查是否可能包含多个诊断
-        potential_diagnoses = multi_diagnosis_service.text_processor.extract_diagnoses(request.text)
+        # 使用多诊断服务进行增强诊断匹配
+        result = multi_diagnosis_service.match_multiple_diagnoses(
+            text=request.text,
+            top_k=request.top_k
+        )
         
-        # 判断是否为多诊断查询
-        if len(potential_diagnoses) > 1:
-            logger.info(f"检测到多诊断查询，提取的诊断: {potential_diagnoses}")
-            
-            # 执行多诊断匹配
-            multi_result = multi_diagnosis_service.match_multiple_diagnoses(
-                text=request.text,
-                top_k=request.top_k
-            )
-            
-            # 合并所有候选结果
-            all_candidates = []
-            diagnosis_matches = []
-            
-            for match_data in multi_result["matches"]:
-                # 添加到总候选列表
-                all_candidates.extend(match_data.candidates)
-                # 保存诊断匹配详情
-                diagnosis_matches.append(match_data)
-            
-            # 按分数排序并限制数量
-            all_candidates.sort(key=lambda x: x.score, reverse=True)
-            all_candidates = all_candidates[:request.top_k]
-            
-            logger.info(f"多诊断查询完成，共找到 {len(all_candidates)} 个候选结果")
-            
-            return QueryResponse(
-                candidates=all_candidates,
-                is_multi_diagnosis=True,
-                extracted_diagnoses=multi_result["extracted_diagnoses"],
-                diagnosis_matches=diagnosis_matches
-            )
+        logger.info(f"多诊断查询完成，提取 {len(result['extracted_diagnoses'])} 个诊断，找到 {result['total_matches']} 个候选结果")
         
-        else:
-            logger.info("检测到单一诊断查询，使用传统向量搜索")
+        # 将多诊断服务结果转换为QueryResponse格式
+        all_candidates = []
+        diagnosis_matches = []
+        
+        for match in result["matches"]:
+            # 收集所有候选结果
+            all_candidates.extend(match.candidates)
             
-            # 单一诊断的传统处理方式
-            query_vector = embedding_service.encode_query(request.text)
-            candidates = milvus_service.search(query_vector, top_k=request.top_k)
-            
-            logger.info(f"单一诊断查询完成，返回 {len(candidates)} 个候选")
-            
-            return QueryResponse(
-                candidates=candidates,
-                is_multi_diagnosis=False
+            # 构建DiagnosisMatch对象
+            diagnosis_match = DiagnosisMatch(
+                diagnosis_text=match.diagnosis_text,
+                candidates=match.candidates,
+                match_confidence=match.match_confidence
             )
+            
+            # 添加增强信息（如果有）
+            if hasattr(match, 'confidence_metrics'):
+                diagnosis_match.confidence_metrics = match.confidence_metrics
+            if hasattr(match, 'confidence_factors'):
+                diagnosis_match.confidence_factors = match.confidence_factors
+            if hasattr(match, 'confidence_level'):
+                diagnosis_match.confidence_level = match.confidence_level
+                
+            diagnosis_matches.append(diagnosis_match)
+        
+        # 按分数排序候选结果
+        all_candidates.sort(key=lambda x: x.score, reverse=True)
+        
+        # 创建响应对象
+        response = QueryResponse(
+            candidates=all_candidates[:request.top_k],  # 限制返回数量
+            is_multi_diagnosis=len(result["extracted_diagnoses"]) > 1,
+            extracted_diagnoses=result["extracted_diagnoses"],
+            diagnosis_matches=diagnosis_matches,
+            processing_metadata={
+                "processing_mode": result.get("processing_mode", "enhanced"),
+                "extraction_metadata": result.get("extraction_metadata", {}),
+                "total_diagnoses": len(result["extracted_diagnoses"]),
+                "total_candidates": result["total_matches"]
+            }
+        )
+        
+        # 应用numpy类型转换作为最终安全网
+        try:
+            response_dict = response.model_dump()
+            cleaned_dict = convert_numpy_types(response_dict)
+            response = QueryResponse(**cleaned_dict)
+        except Exception as conv_error:
+            logger.warning(f"Numpy类型转换失败，使用原始响应: {conv_error}")
+        
+        return response
         
     except Exception as e:
         logger.error(f"查询失败: {e}")
@@ -337,66 +350,34 @@ async def query_similar(request: QueryRequest):
 
 @app.post("/standardize", response_model=StandardizeResponse, tags=["诊断标准化"])
 async def standardize_diagnosis(request: StandardizeRequest):
-    """基于LLM的诊断标准化（集成多诊断查询逻辑）"""
+    """基于LLM的诊断标准化（使用完整多诊断服务，启用药品过滤）"""
     try:
         logger.info(f"收到标准化请求: {request.text}")
         
         if not embedding_service or not milvus_service or not llm_service or not multi_diagnosis_service:
             raise HTTPException(status_code=503, detail="服务未就绪")
         
-        # 第一步：使用query接口逻辑进行多诊断识别和向量检索
+        # 第一步：使用多诊断服务进行诊断匹配
         logger.info("开始多诊断识别和向量检索...")
         
-        # 首先检查是否可能包含多个诊断
-        potential_diagnoses = multi_diagnosis_service.text_processor.extract_diagnoses(request.text)
+        result = multi_diagnosis_service.match_multiple_diagnoses(
+            text=request.text,
+            top_k=request.top_k
+        )
         
+        # 收集所有候选结果
         all_candidates = []
-        extracted_diagnoses = []
-        diagnosis_matches = []
+        for match in result["matches"]:
+            all_candidates.extend(match.candidates)
         
-        # 判断是否为多诊断查询
-        if len(potential_diagnoses) > 1:
-            logger.info(f"检测到多诊断查询，提取的诊断: {potential_diagnoses}")
-            
-            # 执行多诊断匹配
-            multi_result = multi_diagnosis_service.match_multiple_diagnoses(
-                text=request.text,
-                top_k=request.top_k
-            )
-            
-            # 合并所有候选结果
-            for match_data in multi_result["matches"]:
-                all_candidates.extend(match_data.candidates)
-                diagnosis_matches.append(match_data)
-            
-            extracted_diagnoses = multi_result["extracted_diagnoses"]
-            
-            # 按分数排序并限制数量
-            all_candidates.sort(key=lambda x: x.score, reverse=True)
-            all_candidates = all_candidates[:request.top_k]
-            
-            logger.info(f"多诊断查询完成，共找到 {len(all_candidates)} 个候选结果")
-            
-        else:
-            logger.info("检测到单一诊断查询，使用传统向量搜索")
-            
-            # 单一诊断的传统处理方式
-            query_vector = embedding_service.encode_query(request.text)
-            candidates_dict = milvus_service.search(query_vector, top_k=request.top_k)
-            
-            # 转换为Candidate对象格式（与多诊断保持一致）
-            from models.icd_models import Candidate
-            for candidate_dict in candidates_dict:
-                candidate = Candidate(
-                    code=candidate_dict.get("code", ""),
-                    title=candidate_dict.get("title", ""),
-                    score=candidate_dict.get("score", 0.0)
-                )
-                all_candidates.append(candidate)
-            
-            extracted_diagnoses = [request.text]
-            
-            logger.info(f"单一诊断查询完成，返回 {len(all_candidates)} 个候选")
+        # 按分数排序
+        all_candidates.sort(key=lambda x: x.score, reverse=True)
+        all_candidates = all_candidates[:request.top_k]  # 限制数量
+        
+        extracted_diagnoses = result["extracted_diagnoses"]
+        diagnosis_matches = result["matches"]
+        
+        logger.info(f"多诊断查询完成，提取 {len(extracted_diagnoses)} 个诊断，找到 {len(all_candidates)} 个候选结果")
         
         if not all_candidates:
             logger.warning(f"未找到相关候选: {request.text}")
@@ -432,11 +413,14 @@ async def standardize_diagnosis(request: StandardizeRequest):
         logger.info(f"标准化完成，返回 {len(results)} 个结果")
         
         # 如果是多诊断，记录详细信息
-        if len(potential_diagnoses) > 1:
+        is_multi_diagnosis = len(extracted_diagnoses) > 1
+        if is_multi_diagnosis:
             logger.info(f"多诊断标准化详情:")
             logger.info(f"  原始文本: {request.text}")
             logger.info(f"  提取诊断: {extracted_diagnoses}")
             logger.info(f"  诊断匹配数: {len(diagnosis_matches)}")
+            logger.info(f"  处理模式: {result.get('processing_mode', 'enhanced')}")
+            logger.info(f"  药品过滤: 开启")
         
         return StandardizeResponse(results=results)
         
@@ -472,6 +456,30 @@ async def embed_texts(request: EmbeddingRequest):
         logger.error(f"向量化失败: {e}")
         raise HTTPException(status_code=500, detail=f"向量化失败: {str(e)}")
 
+
+@app.post("/entities", tags=["实体提取"])
+async def extract_entities(request: dict):
+    """提取医学实体摘要"""
+    try:
+        text = request.get("text", "")
+        if not text:
+            raise HTTPException(status_code=400, detail="文本不能为空")
+            
+        logger.info(f"收到实体提取请求: {text}")
+        
+        if not multi_diagnosis_service:
+            raise HTTPException(status_code=503, detail="多诊断服务未就绪")
+        
+        # 使用NER服务获取实体摘要
+        entity_summary = multi_diagnosis_service.ner_service.get_entity_summary(text)
+        
+        logger.info(f"实体提取完成，共找到 {entity_summary['total_entities']} 个实体")
+        
+        return entity_summary
+        
+    except Exception as e:
+        logger.error(f"实体提取失败: {e}")
+        raise HTTPException(status_code=500, detail=f"实体提取失败: {str(e)}")
 
 
 @app.get("/stats", tags=["统计信息"])
@@ -570,6 +578,9 @@ async def get_resource_status():
         if multi_diagnosis_service:
             resource_status["multi_diagnosis"] = {
                 "initialized": True,
+                "ner_service": "MedicalNERService",
+                "hierarchical_similarity": "HierarchicalSimilarityService",
+                "confidence_service": "MultiDimensionalConfidenceService",
                 "text_processor": "DiagnosisTextProcessor"
             }
         else:

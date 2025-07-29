@@ -292,13 +292,13 @@ class MilvusService:
                     base_score = float(hit.get("distance", 0))
                     level = hit.get("level", 1)
                     level_weight = self._calculate_level_weight(level)
-                    adjusted_score = base_score * level_weight
+                    adjusted_score = float(base_score * level_weight)
                     
                     candidates.append({
                         "code": hit.get("code"),
                         "title": hit.get("preferred_zh"),
-                        "score": adjusted_score,
-                        "original_score": base_score,
+                        "score": float(adjusted_score),
+                        "original_score": float(base_score),
                         "metadata": {
                             "has_complication": hit.get("has_complication", False),
                             "main_code": hit.get("main_code", ""),

@@ -1,5 +1,40 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
+import numpy as np
+import dataclasses
+
+
+def numpy_serializer(obj):
+    """Custom serializer for numpy types"""
+    if isinstance(obj, (np.integer, np.floating, np.ndarray)):
+        return obj.item() if hasattr(obj, 'item') else float(obj)
+    return obj
+
+
+def convert_numpy_types(obj):
+    """Recursively convert numpy types to Python native types"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_numpy_types(item) for item in obj]
+    elif dataclasses.is_dataclass(obj):
+        # Convert dataclass to dict and process recursively
+        return convert_numpy_types(dataclasses.asdict(obj))
+    elif hasattr(obj, '__dict__'):
+        # Handle objects with __dict__ (like Pydantic models)
+        result = {}
+        for key, value in obj.__dict__.items():
+            if not key.startswith('_'):  # Skip private attributes
+                result[key] = convert_numpy_types(value)
+        return result
+    else:
+        return obj
 
 
 class ICDCode(BaseModel):
@@ -20,16 +55,73 @@ class ICDCode(BaseModel):
 
 class Candidate(BaseModel):
     """候选结果模型"""
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        json_encoders={
+            np.integer: lambda x: int(x),
+            np.floating: lambda x: float(x),
+            np.ndarray: lambda x: x.tolist(),
+            # Handle dataclasses (like SimilarityFactors)
+            object: lambda x: dataclasses.asdict(x) if dataclasses.is_dataclass(x) else x
+        }
+    )
+    
     code: str = Field(..., description="ICD-10编码")
     title: str = Field(..., description="诊断名称")
     score: float = Field(..., description="相似度分数", ge=0.0)
+    
+    # 层级信息字段 (Enhanced features)
+    level: Optional[int] = Field(default=1, description="ICD层级级别")
+    parent_code: Optional[str] = Field(default="", description="父级编码")
+    
+    # 增强评分字段
+    enhanced_score: Optional[float] = Field(default=None, description="增强后的分数")
+    original_score: Optional[float] = Field(default=None, description="原始相似度分数")
+    similarity_factors: Optional[Any] = Field(default=None, description="相似度计算因子")
+    
+    @field_serializer('similarity_factors')
+    def serialize_similarity_factors(self, value):
+        """Custom serializer for similarity_factors to handle numpy types"""
+        if value is None:
+            return None
+        return convert_numpy_types(value)
 
 
 class DiagnosisMatch(BaseModel):
     """单个诊断匹配结果"""
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        json_encoders={
+            np.integer: lambda x: int(x),
+            np.floating: lambda x: float(x),
+            np.ndarray: lambda x: x.tolist(),
+            # Handle dataclasses (like SimilarityFactors)
+            object: lambda x: dataclasses.asdict(x) if dataclasses.is_dataclass(x) else x
+        }
+    )
+    
     diagnosis_text: str = Field(..., description="提取的诊断文本")
     candidates: List[Candidate] = Field(..., description="匹配的候选结果")
     match_confidence: float = Field(..., description="整体匹配置信度", ge=0.0, le=1.0)
+    
+    # 增强置信度字段 (Enhanced features)
+    confidence_metrics: Optional[Any] = Field(default=None, description="置信度指标详情")
+    confidence_factors: Optional[Any] = Field(default=None, description="置信度因子")
+    confidence_level: Optional[str] = Field(default=None, description="置信度等级")
+    
+    @field_serializer('confidence_metrics')
+    def serialize_confidence_metrics(self, value):
+        """Custom serializer for confidence_metrics to handle numpy types"""
+        if value is None:
+            return None
+        return convert_numpy_types(value)
+    
+    @field_serializer('confidence_factors')
+    def serialize_confidence_factors(self, value):
+        """Custom serializer for confidence_factors to handle numpy types"""
+        if value is None:
+            return None
+        return convert_numpy_types(value)
 
 
 class DiagnosisResult(BaseModel):
@@ -48,6 +140,17 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     """查询响应模型"""
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        json_encoders={
+            np.integer: lambda x: int(x),
+            np.floating: lambda x: float(x),
+            np.ndarray: lambda x: x.tolist(),
+            # Handle dataclasses (like SimilarityFactors)
+            object: lambda x: dataclasses.asdict(x) if dataclasses.is_dataclass(x) else x
+        }
+    )
+    
     candidates: List[Candidate] = Field(..., description="候选结果列表")
     # 多诊断支持字段
     is_multi_diagnosis: bool = Field(default=False, description="是否为多诊断查询")

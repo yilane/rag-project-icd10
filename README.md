@@ -318,14 +318,9 @@ rag-project-icd10/
 │   ├── standardize_tab.py                # 诊断标准化标签页
 │   ├── utils.py                          # UI工具函数
 │   └── api_client.py                    # API客户端
-├── tools/                                # 工具脚本
-│   ├── text_processor.py                # 文本处理器（规则化分割）
-│   └── build_database.py                # 数据库构建（支持层级解析）
-└── tests/                                # 测试文件
-    ├── test_chinese_medical_ner.py      # NER服务测试
-    ├── test_hierarchical_similarity.py  # 层级相似度测试
-    ├── test_multidimensional_confidence.py  # 置信度评估测试
-    └── test_enhanced_processing.py      # 增强处理测试
+└── tools/                                # 工具脚本
+    ├── text_processor.py                # 文本处理器（规则化分割）
+    └── build_database.py                # 数据库构建（支持层级解析）
 ```
 
 ### 多诊断处理特性
@@ -380,22 +375,9 @@ API_LOG_LEVEL=info
 GRADIO_HOST=0.0.0.0
 GRADIO_PORT=7860
 
-# 医学NER模型配置（增强功能）
-USE_MEDICAL_NER_MODEL=true
-MEDICAL_NER_MODEL=lixin12345/chinese-medical-ner
-MEDICAL_NER_MIN_CONFIDENCE=0.5
-MEDICAL_NER_USE_GPU=false
-
-# 增强文本处理配置
-USE_ENHANCED_TEXT_PROCESSING=true
-SEMANTIC_BOUNDARY_THRESHOLD=0.75
-ENHANCED_CONFIDENCE_WEIGHT=0.4
-
-# 文本处理优化
-MIN_DIAGNOSIS_LENGTH=2
-MAX_DIAGNOSIS_LENGTH=50
-ENTITY_DENSITY_THRESHOLD=0.1
-BOUNDARY_CONFIDENCE_THRESHOLD=0.8
+# 调试配置
+DEBUG=false
+LOG_LEVEL=INFO
 ```
 
 **注意**：大部分技术参数（如max_tokens、temperature、dimension等）已硬编码在代码中，只有核心的连接配置需要在.env文件中设置。

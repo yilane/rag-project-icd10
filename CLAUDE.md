@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is an ICD-10 medical diagnosis standardization system built with RAG (Retrieval Augmented Generation) technology. The system provides intelligent matching and standardization of Chinese medical terminology to standard ICD-10 codes.
 
 ### Core Technologies
-- **Vector Search**: Uses `intfloat/multilingual-e5-large-instruct` embedding model (1024 dimensions)
+- **Vector Search**: Uses `shibing624/text2vec-base-chinese` embedding model (768 dimensions) optimized for Chinese medical terminology
 - **Vector Database**: Milvus Lite for local vector storage with HNSW indexing
 - **LLM**: DeepSeek (default) with OpenAI/Local fallback support
 - **Web Framework**: FastAPI with comprehensive lifecycle management and async context managers
@@ -63,13 +63,7 @@ uvicorn main:app --host 0.0.0.0 --port 8005 --reload
 python gradio_app.py
 ```
 
-#### Method 2: Using Start Script
-```bash
-# 使用启动脚本（交互式选择）
-./start_services.sh
-```
-
-#### Method 3: FastAPI Only
+#### Method 2: FastAPI Only
 ```bash
 # Start only FastAPI server
 python main.py
@@ -99,13 +93,9 @@ curl -X POST "http://localhost:8005/embed" \
   -H "Content-Type: application/json" \
   -d '{"texts": ["急性胃肠炎", "蛋白尿", "肾功能不全"]}'
 
-# Run unit tests (if available)
-python -m pytest tests/ -v
-
-# Test specific enhanced services
-python tests/test_chinese_medical_ner.py
-python tests/test_hierarchical_similarity.py
-python tests/test_enhanced_processing.py
+# Test API functionality directly
+python -c "from services.medical_ner_service import MedicalNERService; ner = MedicalNERService(); print('NER service initialized successfully')"
+python -c "from services.enhanced_text_processor import EnhancedTextProcessor; print('Enhanced text processor available')"
 ```
 
 ## Architecture Overview
@@ -113,19 +103,20 @@ python tests/test_enhanced_processing.py
 ### Core Services
 - **`main.py`**: FastAPI application with complete lifecycle management and service orchestration
 - **`gradio_app.py`**: Gradio web interface with 3 main tabs (Entity Recognition, Query, Standardization)
-- **`services/embedding_service.py`**: Text vectorization using multilingual E5 model
+- **`services/embedding_service.py`**: Text vectorization using Chinese text2vec model
 - **`services/milvus_service.py`**: Vector database operations with HNSW indexing
 - **`services/llm_service.py`**: Multi-provider LLM service (DeepSeek/OpenAI/Local)
 - **`services/multi_diagnosis_service.py`**: Multi-diagnosis detection and processing
 - **`services/diagnosis_entity_filter.py`**: Non-diagnostic entity filtering (drugs, equipment, departments)
 - **`tools/text_processor.py`**: Rule-based text splitting using delimiters (comma, semicolon, space, plus)
 
-### Enhanced Services (New)
+### Enhanced Services
 - **`services/enhanced_text_processor.py`**: Advanced text processing integrating medical NER and semantic boundary detection
 - **`services/medical_ner_service.py`**: Medical Named Entity Recognition using `lixin12345/chinese-medical-ner` model
 - **`services/hierarchical_similarity_service.py`**: Multi-dimensional similarity calculation with ICD-10 hierarchy-aware scoring
 - **`services/semantic_boundary_service.py`**: Semantic boundary detection for improved diagnosis segmentation
 - **`services/multidimensional_confidence_service.py`**: Advanced confidence scoring with multiple evaluation dimensions
+- **`services/uncertainty_diagnosis_service.py`**: Handles uncertainty patterns in medical diagnoses (e.g., "待查", "疑似")
 
 ### Data Flow
 1. **Input Processing**: Text → Multi-diagnosis detection → Individual diagnosis extraction
@@ -156,12 +147,12 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-3.5-turbo
 
 # Local LLM Configuration
-LOCAL_BASE_URL=http://localhost:8005/v1
+LOCAL_BASE_URL=http://localhost:8000/v1
 LOCAL_MODEL=local-medical-model
 LOCAL_API_KEY=not-required
 
 # Embedding Configuration
-EMBEDDING_MODEL_NAME=intfloat/multilingual-e5-large-instruct
+EMBEDDING_MODEL_NAME=shibing624/text2vec-base-chinese
 EMBEDDING_DEVICE=auto
 
 # Milvus Configuration
@@ -169,7 +160,7 @@ MILVUS_MODE=local
 MILVUS_HOST=localhost
 MILVUS_PORT=19530
 MILVUS_DB_PATH=./db/milvus_icd10.db
-MILVUS_COLLECTION_NAME=icd10_e5
+MILVUS_COLLECTION_NAME=icd10_collection
 
 # API Configuration  
 API_HOST=0.0.0.0
@@ -180,8 +171,6 @@ API_LOG_LEVEL=info
 # Gradio Configuration
 GRADIO_HOST=0.0.0.0
 GRADIO_PORT=7860
-
-
 
 # Debug Configuration
 DEBUG=false
@@ -194,7 +183,7 @@ LOG_LEVEL=INFO
 All services are initialized during FastAPI lifespan with proper error handling and cleanup. The application uses an `@asynccontextmanager` for complete resource lifecycle management.
 
 ### Vector Database Setup
-- **Dimension**: 1024 (from multilingual-e5-large-instruct)
+- **Dimension**: 768 (from shibing624/text2vec-base-chinese)
 - **Index**: HNSW for fast approximate search
 - **Metric**: Inner Product (IP) for similarity scoring
 - **Storage**: Local SQLite-based Milvus Lite
@@ -277,8 +266,8 @@ The system parses ICD-10 codes into three levels:
 
 Hierarchy parsing logic in `tools/build_database.py:_parse_hierarchy()`
 
-### Adding New Endpoints
-Follow the existing pattern with proper error handling, logging, and service availability checks. Use the existing service instances rather than creating new ones.
+### Text Processing Critical Fix
+**Important**: The `tools/text_processor.py` file contains a critical fix for diagnosis text cleaning. The `_clean_diagnosis_text()` method preserves medically significant terms like "待查" (pending investigation), "疑似" (suspected), "考虑" (considering), and "排除" (rule out) which are essential for proper medical diagnosis interpretation.
 
 ### Multi-diagnosis Testing
 Use `tools/text_processor.py` to test diagnosis extraction:
@@ -336,14 +325,14 @@ All logs are written to `logs/api.log` with rotation. Use structured logging for
 2. **Milvus Connection**: Ensure `MILVUS_MODE=local` and database path is writable
 3. **LLM API**: Test connection with `GET /llm/test` and verify API keys in `.env`
 4. **Multi-diagnosis**: Check text processor with various delimiter combinations
-5. **Medical NER Model**: If NER model fails to load, verify `MEDICAL_NER_MODEL` in `.env` and network access
-6. **Enhanced Processing**: If enhanced features are disabled, check `USE_ENHANCED_TEXT_PROCESSING=true` in `.env`
-7. **Gradio UI Issues**: If standardization results don't display, check API port configuration (should be 8005)
-8. **Entity Filtering**: If lab_indicator entities are incorrectly filtered, verify confidence threshold settings
-9. **Standardization Display**: If grouped results don't show, ensure `format_multi_diagnosis_standardization()` receives correct API response format
+5. **Medical NER Model**: If NER model fails to load, verify network access for model download
+6. **Gradio UI Issues**: If standardization results don't display, check API port configuration (should be 8005)
+7. **Entity Filtering**: If lab_indicator entities are incorrectly filtered, verify confidence threshold settings
+8. **Empty Search Results**: If no candidates returned, check database health with `/health` endpoint and verify collection has data
+9. **Vector Dimension Mismatch**: Ensure database was built with correct embedding model (768 dimensions for text2vec-base-chinese)
 
 ### Performance Optimization
-- Vector dimension is optimized at 1024 for speed/accuracy balance
+- Vector dimension is optimized at 768 for Chinese medical terminology
 - Multi-diagnosis processing uses concurrent vector searches
 - HNSW indexing provides fast approximate similarity search
 - Complete resource lifecycle management prevents memory leaks

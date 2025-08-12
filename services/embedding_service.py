@@ -51,10 +51,18 @@ class EmbeddingService:
         
         try:
             logger.info(f"正在加载嵌入模型: {model_name}")
+            logger.info(f"模型名称类型: {type(model_name)}, 值: {repr(model_name)}")
+            logger.info(f"目标设备: {self.device}")
+            
+            # 确保模型名称不为None
+            if not model_name:
+                raise ValueError("模型名称不能为空")
+            
             self.model = SentenceTransformer(model_name, device=self.device)
             logger.info(f"模型加载成功，使用设备: {self.device}")
         except Exception as e:
             logger.error(f"模型加载失败: {e}")
+            logger.error(f"配置信息: {self.config}")
             raise
     
     def _prepare_text_for_embedding(self, text: str) -> str:

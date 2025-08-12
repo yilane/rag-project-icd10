@@ -63,7 +63,7 @@ class DiagnosisEntityFilter:
         return {
             'strict_mode': os.getenv('DIAGNOSIS_FILTER_STRICT_MODE', 'false').lower() == 'true',
             'keep_drug_diseases': os.getenv('KEEP_DRUG_DISEASES', 'true').lower() == 'true',
-            'keep_lab_indicators': os.getenv('KEEP_LAB_INDICATORS', 'false').lower() == 'true',
+            'keep_lab_indicators': os.getenv('KEEP_LAB_INDICATORS', 'true').lower() == 'true',  # 默认保留实验室指标
             'context_window': int(os.getenv('FILTER_CONTEXT_WINDOW', '20')),
             'confidence_threshold': float(os.getenv('FILTER_CONFIDENCE_THRESHOLD', '0.6')),
             'enable_context_analysis': os.getenv('ENABLE_CONTEXT_ANALYSIS', 'true').lower() == 'true'
@@ -181,7 +181,16 @@ class DiagnosisEntityFilter:
             elif entity_type == 'lab_indicator':
                 # 实验室指标根据配置决定是否保留
                 if self.config['keep_lab_indicators']:
-                    filtered_entities[entity_type] = self._filter_by_confidence(entity_list)
+                    # 对实验室指标使用更宽松的置信度阈值（0.5）
+                    lab_threshold = min(0.5, self.config['confidence_threshold'])
+                    filtered_list = [
+                        entity for entity in entity_list
+                        if entity.get('confidence', 0) >= lab_threshold
+                    ]
+                    if filtered_list:
+                        filtered_entities[entity_type] = filtered_list
+                        entity_details = [f"{e['text']}({e['confidence']:.3f})" for e in filtered_list]
+                        logger.debug(f"保留实验室指标（阈值{lab_threshold}）: {entity_details}")
                 else:
                     logger.debug(f"配置禁用实验室指标，过滤: {[e['text'] for e in entity_list]}")
                     

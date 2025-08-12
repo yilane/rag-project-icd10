@@ -61,6 +61,10 @@ class HierarchicalSimilarityService:
         self.embedding_service = embedding_service
         self.ner_service = ner_service
         
+        # 初始化不确定性诊断处理服务
+        from services.uncertainty_diagnosis_service import UncertaintyDiagnosisService
+        self.uncertainty_service = UncertaintyDiagnosisService()
+        
         # 层级权重配置（基于现有系统）
         self.level_weights = {
             1: 1.2,  # 主类别 - 权重更高
@@ -154,10 +158,21 @@ class HierarchicalSimilarityService:
         factors = SimilarityFactors()
         
         try:
+            # 0. 精确匹配检测（优先级最高）
+            candidate_title = candidate_record.get('preferred_zh', '').strip()
+            query_clean = query_text.strip()
+            is_exact_match = candidate_title == query_clean
+            
             # 1. 基础向量相似度
             factors.vector_similarity = self._calculate_vector_similarity(
                 query_text, candidate_record
             )
+            
+            # 如果是精确匹配但向量相似度异常低，进行修正
+            if is_exact_match and factors.vector_similarity < 0.9:
+                logger.info(f"检测到精确匹配但向量相似度异常低: '{query_clean}' == '{candidate_title}', "
+                           f"向量相似度: {factors.vector_similarity:.4f} -> 修正为 1.0")
+                factors.vector_similarity = 1.0
             
             # 2. 层级增强分数
             factors.hierarchy_boost = self._calculate_hierarchy_boost(
@@ -186,6 +201,12 @@ class HierarchicalSimilarityService:
             
             # 计算加权总分
             enhanced_score = self._calculate_weighted_score(factors)
+            
+            # 精确匹配的额外处理
+            if is_exact_match:
+                # 确保精确匹配始终有最高优先级
+                enhanced_score = max(enhanced_score, 1.5)
+                logger.info(f"精确匹配检测: '{query_clean}' == '{candidate_title}', 最终分数: {enhanced_score:.4f}")
             
             logger.debug(f"增强相似度计算完成: {candidate_record.get('code', 'unknown')} = {enhanced_score:.4f}")
             
@@ -452,16 +473,20 @@ class HierarchicalSimilarityService:
             return 0.5
     
     def _calculate_weighted_score(self, factors: SimilarityFactors) -> float:
-        """计算加权总分（采用加法增强模式）"""
+        """计算加权总分（采用加法增强模式，优化精确匹配优先级）"""
         try:
             # 基础向量相似度作为起点
             base_score = factors.vector_similarity
             
+            # 精确匹配检测：如果基础相似度很高，说明可能是精确匹配
+            is_high_precision_match = base_score > 0.95
+            
             # 各种增强因子的加法贡献
             enhancements = 0.0
             
-            # 层级增强（直接加到基础分数上）
-            enhancements += factors.hierarchy_boost * self.factor_weights['hierarchy_boost'] / 0.2  # 归一化到权重
+            # 层级增强（如果是高精度匹配，减少层级权重的影响）
+            hierarchy_weight_factor = 0.5 if is_high_precision_match else 1.0
+            enhancements += factors.hierarchy_boost * self.factor_weights['hierarchy_boost'] / 0.2 * hierarchy_weight_factor
             
             # 实体匹配增强
             enhancements += factors.entity_match_score * self.factor_weights['entity_match_score'] / 0.15
@@ -477,6 +502,12 @@ class HierarchicalSimilarityService:
             # 上下文相关性增强
             enhancements += factors.context_relevance * self.factor_weights['context_relevance'] / 0.03
             
+            # 精确匹配奖励：如果是高精度匹配，给予额外奖励
+            if is_high_precision_match:
+                precision_bonus = 0.15  # 精确匹配奖励
+                enhancements += precision_bonus
+                logger.debug(f"检测到高精度匹配 (基础分数: {base_score:.4f})，给予精确匹配奖励: {precision_bonus}")
+            
             # 最终分数 = 基础分数 + 增强分数
             final_score = base_score + enhancements
             
@@ -491,7 +522,7 @@ class HierarchicalSimilarityService:
                                    query_entities: Dict[str, List[Dict]],
                                    candidate_records: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], float, SimilarityFactors]]:
         """
-        批量计算增强相似度
+        批量计算增强相似度（集成不确定性处理）
         
         Args:
             query_text: 查询文本
@@ -505,17 +536,32 @@ class HierarchicalSimilarityService:
         
         logger.info(f"开始批量计算 {len(candidate_records)} 个候选记录的增强相似度")
         
-        for record in candidate_records:
+        # 1. 处理不确定性诊断
+        processed_query, processed_candidates = self.uncertainty_service.process_uncertainty_query(
+            query_text, candidate_records
+        )
+        
+        # 如果查询被处理了，记录信息
+        if processed_query != query_text:
+            logger.info(f"不确定性处理: '{query_text}' -> '{processed_query}'")
+        
+        # 2. 对处理后的候选记录进行增强相似度计算
+        for record in processed_candidates:
             try:
                 enhanced_score, factors = self.calculate_enhanced_similarity(
-                    query_text, query_entities, record
+                    processed_query, query_entities, record
                 )
                 
                 # 更新记录的分数
                 enhanced_record = record.copy()
                 enhanced_record['enhanced_score'] = enhanced_score
-                enhanced_record['original_score'] = record.get('score', 0.0)
+                enhanced_record['original_score'] = record.get('original_score', record.get('score', 0.0))
                 enhanced_record['similarity_factors'] = factors
+                
+                # 保留不确定性处理信息
+                if 'uncertainty_boost' in record:
+                    enhanced_record['uncertainty_boost'] = record['uncertainty_boost']
+                    enhanced_record['uncertainty_weight'] = record['uncertainty_weight']
                 
                 enhanced_results.append((enhanced_record, enhanced_score, factors))
                 

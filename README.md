@@ -91,36 +91,83 @@ python tools/build_database.py --verify-only
 ### 4. 启动API服务
 
 ```bash
-# 启动FastAPI服务
-python main.py
+#### Method 1: Manual Separate Launch (推荐)
+```bash
+# 终端1 - 启动API服务
+uvicorn main:app --host 0.0.0.0 --port 8005 --reload
 
-# 或使用uvicorn
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# 终端2 - 启动Gradio界面
+python gradio_app.py
 ```
 
-### 5. 测试API
+#### Method 2: Using Start Script
+```bash
+# 使用启动脚本（交互式选择）
+./start_services.sh
+```
 
-访问 http://localhost:8000/docs 查看API文档
+#### Method 3: FastAPI Only
+```bash
+# Start only FastAPI server
+python main.py
+# Or
+uvicorn main:app --host 0.0.0.0 --port 8005 --reload
+```
+```
+
+### 5. 启动Gradio界面（可选）
+
+```bash
+# 在另一个终端启动Gradio界面
+python gradio_app.py
+```
+
+**重要**: Gradio界面需要API服务先启动才能正常使用所有功能。界面会显示API连接状态。默认API端口为8005，Gradio端口为7860。
+
+### 6. 测试API
+
+访问 http://localhost:8005/docs 查看API文档，或访问 http://localhost:7860 使用Gradio界面
 
 ```bash
 # 健康检查
-curl http://localhost:8000/health
+curl http://localhost:8005/health
 
 # 基础查询（支持多诊断自动识别，自动过滤药品）
-curl -X POST "http://localhost:8000/query" \
+curl -X POST "http://localhost:8005/query" \
   -H "Content-Type: application/json" \
   -d '{"text": "急性胃肠炎 发热", "top_k": 5}'
 
 # 多诊断查询示例（含药品过滤）
-curl -X POST "http://localhost:8000/query" \
+curl -X POST "http://localhost:8005/query" \
   -H "Content-Type: application/json" \
   -d '{"text": "蛋白尿待查 肾功能不全 2型糖尿病伴血糖控制不佳 服用二甲双胍", "top_k": 5}'
 
 # 智能标准化（集成多诊断识别和层级权重）
-curl -X POST "http://localhost:8000/standardize" \
+curl -X POST "http://localhost:8005/standardize" \
   -H "Content-Type: application/json" \
   -d '{"text": "疑似埃尔托霍乱爆发，伴有急性胃肠炎症状", "top_k": 10, "llm_provider": "deepseek"}'
 ```
+
+## 🖥️ Gradio Web界面
+
+系统提供了完整的Gradio web界面，包含3个主要功能标签页：
+
+### 界面结构
+1. **🏷️ 医学命名实体识别** - 医学NER功能，支持实体分类和药品过滤
+2. **🔍 智能诊断查询** - 多诊断向量检索，支持层级权重和置信度评估
+3. **🤖 诊断标准化** - LLM智能标准化，支持多种模型切换
+
+### 访问方式
+- **API服务**: http://localhost:8005/docs (FastAPI Swagger文档)
+- **Gradio界面**: http://localhost:7860 (Web界面)
+- **健康检查**: http://localhost:8005/health
+
+### 界面特性
+- **实时API状态监控**: 显示API连接状态和服务健康度
+- **交互式结果展示**: 支持分组显示多诊断结果
+- **多模型切换**: 支持DeepSeek/OpenAI等LLM提供商动态切换
+- **详细置信度报告**: 12维度综合置信度评分可视化
+- **层级权重可视化**: ICD-10层级结构和权重加成展示
 
 ## 📚 API文档
 
@@ -209,6 +256,17 @@ curl -X POST "http://localhost:8000/standardize" \
 
 检查系统健康状态，包括各服务组件状态
 
+#### 4. 医学实体识别 `POST /entities`
+
+提取文本中的医学实体，支持药品过滤
+
+```json
+{
+  "text": "急性心肌梗死伴心律失常，服用阿司匹林",
+  "filter_drugs": true
+}
+```
+
 ### 管理接口
 
 - `GET /stats` - 系统统计信息（Milvus、向量化、LLM状态）
@@ -225,10 +283,13 @@ curl -X POST "http://localhost:8000/standardize" \
 ```
 rag-project-icd10/
 ├── main.py                               # FastAPI主应用（含完整生命周期管理）
+├── gradio_app.py                         # Gradio web界面（3个主要标签页）
+├── start_services.sh                     # 服务启动脚本（交互式选择）
 ├── env.example                           # 环境变量配置示例  
 ├── requirements.txt                      # Python依赖包
 ├── README.md                             # 项目说明文档
 ├── CLAUDE.md                             # Claude Code操作指南
+├── docs/                                 # 文档目录
 ├── data/                                 # 数据目录
 │   └── ICD_10v601.csv                   # 原始ICD数据（37k+记录）
 ├── db/                                   # Milvus数据存储
@@ -247,6 +308,12 @@ rag-project-icd10/
 │   ├── enhanced_text_processor.py       # 增强文本处理器
 │   ├── semantic_boundary_service.py     # 语义边界检测服务
 │   └── diagnosis_entity_filter.py       # 诊断实体过滤器
+├── ui/                                   # Gradio界面组件
+│   ├── entities_tab.py                  # 医学命名实体识别标签页
+│   ├── query_tab.py                     # 智能诊断查询标签页
+│   ├── standardize_tab.py                # 诊断标准化标签页
+│   ├── utils.py                          # UI工具函数
+│   └── api_client.py                    # API客户端
 ├── tools/                                # 工具脚本
 │   ├── text_processor.py                # 文本处理器（规则化分割）
 │   └── build_database.py                # 数据库构建（支持层级解析）
@@ -254,7 +321,7 @@ rag-project-icd10/
     ├── test_chinese_medical_ner.py      # NER服务测试
     ├── test_hierarchical_similarity.py  # 层级相似度测试
     ├── test_multidimensional_confidence.py  # 置信度评估测试
-    └── test_query_api_with_multi_diagnosis.py  # API集成测试
+    └── test_enhanced_processing.py      # 增强处理测试
 ```
 
 ### 多诊断处理特性
@@ -301,8 +368,13 @@ MILVUS_COLLECTION_NAME=icd10_e5
 
 # API配置
 API_HOST=0.0.0.0
-API_PORT=8000
+API_PORT=8005
+API_WORKERS=1
 API_LOG_LEVEL=info
+
+# Gradio配置
+GRADIO_HOST=0.0.0.0
+GRADIO_PORT=7860
 
 # 医学NER模型配置（增强功能）
 USE_MEDICAL_NER_MODEL=true
@@ -326,6 +398,45 @@ BOUNDARY_CONFIDENCE_THRESHOLD=0.8
 
 ## 🔧 高级功能
 
+### Gradio界面使用指南
+
+#### 医学命名实体识别标签页
+```python
+# 输入医学文本，获取实体识别结果
+输入: "急性心肌梗死伴左心室功能不全，服用阿司匹林片"
+
+# 系统返回分类结果：
+# 疾病实体: ["急性心肌梗死", "左心室功能不全"]
+# 药品实体: ["阿司匹林片"]
+# 过滤选项: 可选择是否过滤药品、设备等非诊断实体
+```
+
+#### 智能诊断查询标签页
+```python
+# 多诊断智能检索
+输入: "蛋白尿待查 肾功能不全 2型糖尿病伴血糖控制不佳"
+
+# 系统自动：
+# 1. 分割识别多个诊断
+# 2. 并行向量检索
+# 3. 层级权重计算
+# 4. 置信度评估
+# 5. 分组展示结果
+```
+
+#### 诊断标准化标签页
+```python
+# LLM智能标准化
+输入: "疑似埃尔托霍乱爆发，伴有急性胃肠炎症状"
+LLM模型: DeepSeek (可切换)
+
+# 系统流程：
+# 1. 多诊断向量检索（复用查询逻辑）
+# 2. LLM标准化推理
+# 3. 结构化结果展示
+# 4. 推理过程可视化
+```
+
 ### 多诊断识别示例
 
 ```python
@@ -341,7 +452,7 @@ text = "蛋白尿待查 肾功能不全 2型糖尿病伴血糖控制不佳 服�
 
 ### 置信度评估系统
 
-系统采用12维度综合置信度评分：
+系统采用12维度综合置信度评分，在Gradio界面中提供详细可视化：
 
 ```python
 # 置信度维度示例
@@ -365,17 +476,17 @@ confidence_metrics = {
 
 ```bash
 # 切换到DeepSeek (默认推荐)
-curl -X POST "http://localhost:8000/llm/switch" \
+curl -X POST "http://localhost:8005/llm/switch" \
   -H "Content-Type: application/json" \
   -d '"deepseek"'
 
 # 切换到OpenAI
-curl -X POST "http://localhost:8000/llm/switch" \
+curl -X POST "http://localhost:8005/llm/switch" \
   -H "Content-Type: application/json" \
   -d '"openai"'
 
 # 测试当前LLM连接
-curl -X GET "http://localhost:8000/llm/test"
+curl -X GET "http://localhost:8005/llm/test"
 ```
 
 ### 增强文本处理
@@ -402,6 +513,26 @@ for diagnosis in result:
 
 ### 医学实体识别
 
+#### 通过API接口测试
+```bash
+# 测试医学实体识别API
+curl -X POST "http://localhost:8005/entities" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "急性心肌梗死伴左心室功能不全，服用阿司匹林片",
+    "filter_drugs": true,
+    "min_confidence": 0.5
+  }'
+```
+
+#### 通过Gradio界面测试
+1. 访问 http://localhost:7860
+2. 切换到"医学命名实体识别"标签页
+3. 输入医学文本
+4. 选择是否过滤药品实体
+5. 查看分类结果和置信度
+
+#### 编程接口测试
 ```bash
 # 测试医学NER服务
 python -c "
@@ -548,10 +679,10 @@ for d in diagnoses:
 6. **LLM连接失败**
    ```bash
    # 测试LLM连接
-   curl -X GET "http://localhost:8000/llm/test"
+   curl -X GET "http://localhost:8005/llm/test"
    
    # 切换LLM提供商
-   curl -X POST "http://localhost:8000/llm/switch" \
+   curl -X POST "http://localhost:8005/llm/switch" \
      -H "Content-Type: application/json" \
      -d '"deepseek"'
    
@@ -601,21 +732,21 @@ grep "标准化" logs/api.log
 
 ```bash
 # 检查系统健康状态（包含所有服务组件）
-curl http://localhost:8000/health
+curl http://localhost:8005/health
 
 # 获取详细资源状态（包括增强服务状态）
-curl http://localhost:8000/resource/status
+curl http://localhost:8005/resource/status
 
 # 查看系统统计信息
-curl http://localhost:8000/stats
+curl http://localhost:8005/stats
 
 # 测试医学实体提取功能
-curl -X POST "http://localhost:8000/entities" \
+curl -X POST "http://localhost:8005/entities" \
   -H "Content-Type: application/json" \
   -d '{"text": "急性心肌梗死伴心律失常，服用阿司匹林"}'
 
 # 获取详细置信度报告（新功能）
-curl -X POST "http://localhost:8000/query" \
+curl -X POST "http://localhost:8005/query" \
   -H "Content-Type: application/json" \
   -d '{"text": "慢性肾功能不全", "top_k": 3}' | jq '.diagnosis_matches[0].confidence_metrics'
 ```
@@ -624,44 +755,50 @@ curl -X POST "http://localhost:8000/query" \
 
 ```bash
 # 监控内存使用情况
-curl http://localhost:8000/resource/status | jq '.milvus.memory_usage'
+curl http://localhost:8005/resource/status | jq '.milvus.memory_usage'
 
 # 手动释放系统资源
-curl -X POST http://localhost:8000/resource/release
+curl -X POST http://localhost:8005/resource/release
 
 # 重新加载Milvus集合到内存
-curl -X POST http://localhost:8000/resource/reload
+curl -X POST http://localhost:8005/resource/reload
 ```
 
 ## 🎯 核心增强特性
 
-### 1. 智能药品过滤系统
+### 1. Gradio Web界面系统
+- **三大功能模块**：医学NER、智能查询、诊断标准化的完整Web界面
+- **实时状态监控**：API连接状态、服务健康度实时显示
+- **交互式结果展示**：支持分组显示、置信度可视化、层级权重展示
+- **多模型集成**：LLM提供商动态切换，推理过程可视化
+
+### 2. 智能药品过滤系统
 - **自动识别**：基于医学NER模型识别药品、设备等非诊断实体
 - **智能过滤**：自动从查询结果中过滤药品实体，专注于诊断匹配
 - **配置灵活**：支持通过环境变量启用/禁用药品过滤功能
 
-### 2. 多维度置信度评估
+### 3. 多维度置信度评估
 - **12维度评分**：包括向量相似度、层级权重、实体匹配、术语准确性等
 - **综合置信度**：集成多个因子的加权评分，提供可靠性量化
 - **置信度区间**：提供置信度的统计区间和可靠性评估
 - **改进建议**：基于置信度分析提供诊断文本优化建议
 
-### 3. ICD-10层级智能权重
+### 4. ICD-10层级智能权重
 - **三级层级**：主类别、亚类别、详细编码的智能识别
 - **动态权重**：主类别1.2x、亚类别1.0x、详细编码0.8x的差异化加权
 - **层级增强**：基于ICD-10层级结构的语义增强匹配
 
-### 4. 增强文本处理器
+### 5. 增强文本处理器
 - **语义边界检测**：智能识别医学文本中的诊断边界
 - **NER集成**：融合医学命名实体识别提高分割准确性
 - **多模式提取**：结合规则分割和语义分析的混合方法
 
-### 5. 医学实体识别服务
+### 6. 医学实体识别服务
 - **专业模型**：基于`lixin12345/chinese-medical-ner`的中文医学NER
 - **实体分类**：区分疾病、症状、药品、设备、治疗方式等实体类型
 - **置信度评估**：为每个识别的实体提供置信度分数
 
-### 6. 系统性能优化
+### 7. 系统性能优化
 - **内存管理**：完整的资源生命周期管理和自动清理
 - **批处理优化**：根据数据规模动态调整批处理大小
 - **GPU支持**：智能GPU缓存管理和自动清理

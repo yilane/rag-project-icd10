@@ -1,4 +1,5 @@
 import os
+import json
 from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -68,10 +69,24 @@ async def lifespan(app: FastAPI):
         # 测试LLM连接（非关键，失败也继续）
         try:
             llm_test = llm_service.test_connection()
-            if not llm_test.get("connected", False):
-                logger.warning("⚠️  LLM连接测试失败，标准化功能可能不可用")
+            if llm_test.get("connected", False):
+                duration = llm_test.get("duration", 0)
+                if duration > 60:
+                    logger.warning(f"⚠️  LLM连接较慢 (耗时: {duration:.1f}秒)，但功能正常")
+                else:
+                    logger.info(f"✅ LLM连接正常 (耗时: {duration:.1f}秒)")
+            else:
+                error_msg = llm_test.get("error", "未知错误")
+                error_type = llm_test.get("error_type", "unknown")
+                duration = llm_test.get("duration", 0)
+                
+                if error_type == "timeout":
+                    logger.warning(f"⚠️  LLM连接超时 (耗时: {duration:.1f}秒)，标准化功能可能较慢")
+                else:
+                    logger.warning(f"⚠️  LLM连接测试失败 (耗时: {duration:.1f}秒): {error_msg}")
+                    logger.info("💡 标准化功能可能不可用，但查询功能正常")
         except Exception as llm_err:
-            logger.warning(f"⚠️  LLM测试失败: {llm_err}")
+            logger.warning(f"⚠️  LLM测试异常: {llm_err}")
         
         logger.info("✅ LLM服务初始化完成")
         
@@ -350,7 +365,7 @@ async def query_similar(request: QueryRequest):
 
 @app.post("/standardize", response_model=StandardizeResponse, tags=["诊断标准化"])
 async def standardize_diagnosis(request: StandardizeRequest):
-    """基于LLM的诊断标准化（使用完整多诊断服务，启用药品过滤）"""
+    """基于LLM的诊断标准化（使用完整多诊断服务，启用非诊断实体过滤）"""
     try:
         logger.info(f"收到标准化请求: {request.text}")
         
@@ -392,35 +407,93 @@ async def standardize_diagnosis(request: StandardizeRequest):
         for info in candidate_info:
             logger.info(f"  {info}")
         
-        # 第二步：使用LLM进行标准化
-        logger.info(f"开始LLM标准化，使用提供商: {request.llm_provider}")
+        # 第二步：使用LLM分别对每个诊断进行标准化
+        logger.info(f"开始LLM分组标准化，使用提供商: {request.llm_provider}")
         
-        # 转换为字典格式（LLM服务需要的格式）
-        candidates_for_llm = []
-        for candidate in all_candidates:
-            candidates_for_llm.append({
-                "code": candidate.code,
-                "title": candidate.title,
-                "score": candidate.score
-            })
-        
-        results = llm_service.standardize_diagnosis(
-            request.text,
-            candidates_for_llm,
-            request.llm_provider
-        )
-        
-        logger.info(f"标准化完成，返回 {len(results)} 个结果")
-        
-        # 如果是多诊断，记录详细信息
+        # 检查是否为多诊断
         is_multi_diagnosis = len(extracted_diagnoses) > 1
+        
+        if is_multi_diagnosis:
+            # 多诊断：分别标准化每个诊断
+            standardization_results = []
+            
+            for match in diagnosis_matches:
+                diagnosis_text = match.diagnosis_text
+                match_confidence = match.match_confidence
+                confidence_level = match.confidence_level
+                diagnosis_candidates = match.candidates
+                
+                logger.info(f"标准化诊断: {diagnosis_text} (置信度: {match_confidence:.3f})")
+                
+                # 转换候选结果格式
+                candidates_for_llm = []
+                for candidate in diagnosis_candidates:
+                    candidates_for_llm.append({
+                        "code": candidate.code,
+                        "title": candidate.title,
+                        "score": candidate.score
+                    })
+                
+                # 对单个诊断调用LLM
+                llm_results = llm_service.standardize_diagnosis(
+                    diagnosis_text,
+                    candidates_for_llm,
+                    request.llm_provider
+                )
+                
+                # 构建分组结果
+                group_result = {
+                    "diagnosis_text": diagnosis_text,
+                    "match_confidence": match_confidence,
+                    "confidence_level": confidence_level,
+                    "standardized_results": llm_results,
+                    "candidates": candidates_for_llm
+                }
+                standardization_results.append(group_result)
+            
+            # 构建多诊断响应
+            results = [{
+                "is_multi_diagnosis": True,
+                "extracted_diagnoses": extracted_diagnoses,
+                "standardization_groups": standardization_results,
+                "total_diagnoses": len(extracted_diagnoses)
+            }]
+            
+            logger.info(f"多诊断标准化完成，处理了 {len(standardization_results)} 个诊断分组")
+            
+        else:
+            # 单诊断：使用原有逻辑
+            candidates_for_llm = []
+            for candidate in all_candidates:
+                candidates_for_llm.append({
+                    "code": candidate.code,
+                    "title": candidate.title,
+                    "score": candidate.score
+                })
+            
+            llm_results = llm_service.standardize_diagnosis(
+                request.text,
+                candidates_for_llm,
+                request.llm_provider
+            )
+            
+            # 构建单诊断响应
+            results = [{
+                "is_multi_diagnosis": False,
+                "standardized_results": llm_results,
+                "candidates": candidates_for_llm
+            }]
+            
+            logger.info(f"单诊断标准化完成，返回 {len(llm_results)} 个结果")
+        
+        # 记录详细信息
         if is_multi_diagnosis:
             logger.info(f"多诊断标准化详情:")
             logger.info(f"  原始文本: {request.text}")
             logger.info(f"  提取诊断: {extracted_diagnoses}")
             logger.info(f"  诊断匹配数: {len(diagnosis_matches)}")
             logger.info(f"  处理模式: {result.get('processing_mode', 'enhanced')}")
-            logger.info(f"  药品过滤: 开启")
+            logger.info(f"  非诊断实体过滤: 开启")
         
         return StandardizeResponse(results=results)
         
@@ -470,12 +543,28 @@ async def extract_entities(request: dict):
         if not multi_diagnosis_service:
             raise HTTPException(status_code=503, detail="多诊断服务未就绪")
         
-        # 使用NER服务获取实体摘要
+        # 获取过滤设置
+        filter_non_diagnostic = request.get("filter_drugs", True)  # 保持API兼容性，内部重命名
+        
+        # 获取完整的实体数据
+        entities = multi_diagnosis_service.ner_service.extract_medical_entities(text, filter_drugs=filter_non_diagnostic)
+        
+        # 获取实体摘要
         entity_summary = multi_diagnosis_service.ner_service.get_entity_summary(text)
         
-        logger.info(f"实体提取完成，共找到 {entity_summary['total_entities']} 个实体")
+        # 合并数据：摘要 + 完整实体列表
+        complete_result = {
+            **entity_summary,  # 包含总数、类型、高置信度实体等统计信息
+            'entities': entities  # 添加完整的实体列表给Gradio界面使用
+        }
         
-        return entity_summary
+        total_entities = sum(len(entities[key]) for key in entities)
+        logger.info(f"实体提取完成，共找到 {total_entities} 个实体")
+        
+        # 转换numpy类型以避免序列化问题
+        cleaned_result = convert_numpy_types(complete_result)
+        
+        return cleaned_result
         
     except Exception as e:
         logger.error(f"实体提取失败: {e}")
@@ -664,7 +753,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host=os.getenv("API_HOST", "0.0.0.0"),
-        port=int(os.getenv("API_PORT", "8000")),
+        port=int(os.getenv("API_PORT", "8005")),
         reload=True,
         log_level=os.getenv("API_LOG_LEVEL", "info")
     ) 

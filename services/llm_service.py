@@ -54,7 +54,8 @@ class LLMService:
         try:
             client = OpenAI(
                 api_key=provider_config.get("api_key", ""),
-                base_url=provider_config.get("base_url", "")
+                base_url=provider_config.get("base_url", ""),
+                timeout=120.0  # 设置2分钟超时
             )
             logger.info(f"成功创建 {self.provider} 客户端")
             return client
@@ -254,7 +255,12 @@ class LLMService:
     
     def test_connection(self) -> Dict[str, Any]:
         """测试LLM连接"""
+        import time
+        start_time = time.time()
+        
         try:
+            logger.info(f"正在测试 {self.provider} 连接...")
+            
             # 发送简单测试请求
             llm_config = self.config.get("llm", {})
             provider_config = llm_config.get(self.provider, {})
@@ -264,21 +270,42 @@ class LLMService:
                 messages=[
                     {"role": "user", "content": "你好"}
                 ],
-                max_tokens=10
+                max_tokens=10,
+                timeout=90  # 90秒超时
             )
+            
+            duration = time.time() - start_time
+            logger.info(f"{self.provider} 连接测试成功 (耗时: {duration:.1f}秒)")
             
             return {
                 "connected": True,
                 "provider": self.provider,
                 "model": provider_config.get("model", ""),
-                "response": response.choices[0].message.content
+                "response": response.choices[0].message.content,
+                "duration": duration
             }
             
         except Exception as e:
+            duration = time.time() - start_time
+            error_msg = str(e)
+            logger.warning(f"{self.provider} 连接测试失败 (耗时: {duration:.1f}秒): {error_msg}")
+            
+            # 分析错误类型
+            if "timeout" in error_msg.lower():
+                error_type = "timeout"
+            elif "authentication" in error_msg.lower() or "401" in error_msg:
+                error_type = "auth"
+            elif "404" in error_msg:
+                error_type = "endpoint"
+            else:
+                error_type = "unknown"
+            
             return {
                 "connected": False,
                 "provider": self.provider,
-                "error": str(e)
+                "error": error_msg,
+                "error_type": error_type,
+                "duration": duration
             }
     
     def get_provider_info(self) -> Dict[str, Any]:

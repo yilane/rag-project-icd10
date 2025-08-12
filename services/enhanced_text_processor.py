@@ -42,7 +42,7 @@ class EnhancedTextProcessor:
         
         Args:
             text: 输入的医疗文本
-            filter_drugs: 是否过滤药品等非诊断实体，默认True
+            filter_drugs: 是否过滤非诊断实体（药品、设备、科室等），默认True
             
         Returns:
             增强的诊断结果列表，包含更多元数据

@@ -122,16 +122,20 @@ class DiagnosisTextProcessor:
         return segments
     
     def _clean_diagnosis_text(self, text: str) -> str:
-        """简单清理诊断文本"""
+        """
+        简单清理诊断文本
+        保留有诊断价值的关键词如"待查"、"疑似"等
+        """
         if not text:
             return ""
         
         # 去除首尾空白
         text = text.strip()
         
-        # 去除常见的无意义前后缀
-        prefixes_to_remove = ['待查', '考虑', '疑似', '排除', '？', '?', '诊断为', '患者']
-        suffixes_to_remove = ['待查', '？', '?', '诊断']
+        # 只去除真正无意义的前后缀，保留有诊断价值的词汇
+        # "待查"、"疑似"、"考虑"、"排除"等表示诊断不确定性，应保留
+        prefixes_to_remove = ['？', '?', '诊断为', '患者']  # 移除了待查、考虑、疑似、排除
+        suffixes_to_remove = ['？', '?', '诊断']  # 移除了待查
         
         for prefix in prefixes_to_remove:
             if text.startswith(prefix):
@@ -155,7 +159,7 @@ class DiagnosisTextProcessor:
         
         Args:
             text: 输入文本
-            filter_drugs: 是否过滤药品等非诊断实体，默认True
+            filter_drugs: 是否过滤非诊断实体（药品、设备、科室等），默认True
             
         Returns:
             增强的诊断结果列表，包含元数据

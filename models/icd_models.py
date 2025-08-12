@@ -166,8 +166,19 @@ class StandardizeRequest(BaseModel):
 
 
 class StandardizeResponse(BaseModel):
-    """标准化响应模型"""
-    results: List[DiagnosisResult] = Field(..., description="标准化结果列表")
+    """标准化响应模型 - 支持多诊断分组显示"""
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        json_encoders={
+            np.integer: lambda x: int(x),
+            np.floating: lambda x: float(x),
+            np.ndarray: lambda x: x.tolist(),
+            object: lambda x: dataclasses.asdict(x) if dataclasses.is_dataclass(x) else x
+        }
+    )
+    
+    # 使用Any类型支持灵活的结果格式，包括多诊断分组和单诊断结果
+    results: List[Any] = Field(..., description="标准化结果列表（可包含多诊断分组信息）")
 
 
 class EmbeddingRequest(BaseModel):

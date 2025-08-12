@@ -24,7 +24,7 @@ class MultiDiagnosisService:
         self.embedding_service = embedding_service
         self.milvus_service = milvus_service
         
-        # 初始化医学NER服务（启用药品过滤）
+        # 初始化医学NER服务（启用非诊断实体过滤）
         self.ner_service = MedicalNERService(use_model=True)
         
         # 初始化层级相似度服务
@@ -62,12 +62,12 @@ class MultiDiagnosisService:
         logger.info(f"开始多诊断匹配: {text}")
         
         try:
-            # 1. 提取诊断词（使用增强方法获取更多信息，启用药品过滤）
+            # 1. 提取诊断词（使用增强方法获取更多信息，启用非诊断实体过滤）
             enhanced_diagnoses = self.text_processor.extract_diagnoses_enhanced(text)
             
-            # 药品实体过滤默认启用
+            # 非诊断实体过滤默认启用
             filter_drugs = True
-            logger.info(f"启用药品实体过滤模式")
+            logger.info(f"启用非诊断实体过滤模式")
             diagnoses = [d['text'] for d in enhanced_diagnoses]
             
             if not diagnoses:
@@ -126,7 +126,7 @@ class MultiDiagnosisService:
     
     def _match_single_diagnosis_enhanced(self, diagnosis: str, top_k: int, enhanced_info: Dict[str, Any] = None) -> DiagnosisMatch:
         """
-        增强的单个诊断匹配（集成层级相似度计算，启用药品过滤）
+        增强的单个诊断匹配（集成层级相似度计算，启用非诊断实体过滤）
         
         Args:
             diagnosis: 单个诊断文本
@@ -142,11 +142,11 @@ class MultiDiagnosisService:
             enhanced_info = {}
         
         try:
-            # 1. 提取查询实体信息（默认启用药品过滤）
+            # 1. 提取查询实体信息（默认启用非诊断实体过滤）
             filter_drugs = True
             query_entities = self.ner_service.extract_medical_entities(diagnosis, filter_drugs=filter_drugs)
             entity_count = sum(len(v) for v in query_entities.values())
-            logger.debug(f"诊断 '{diagnosis}' 提取到 {entity_count} 个实体（药品过滤: 开启）")
+            logger.debug(f"诊断 '{diagnosis}' 提取到 {entity_count} 个实体（非诊断实体过滤: 开启）")
             
             # 2. 生成查询向量并执行基础搜索
             query_vector = self.embedding_service.encode_query(diagnosis)

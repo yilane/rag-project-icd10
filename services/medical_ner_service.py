@@ -76,13 +76,17 @@ class MedicalNERService:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             self.model = AutoModelForTokenClassification.from_pretrained(self.model_name)
             
+            # 自动检测GPU可用性
+            import torch
+            device = 0 if torch.cuda.is_available() else -1
+            
             # 创建NER pipeline
             self.ner_pipeline = pipeline(
                 "ner",
                 model=self.model,
                 tokenizer=self.tokenizer,
                 aggregation_strategy="simple",
-                device=0 if os.getenv('MEDICAL_NER_USE_GPU', 'false').lower() == 'true' else -1
+                device=device
             )
             
             logger.info(f"医学NER模型加载成功: {self.model_name}")
@@ -142,7 +146,7 @@ class MedicalNERService:
         
         Args:
             text: 输入的医学文本
-            filter_drugs: 是否过滤药品等非诊断实体，默认True
+            filter_drugs: 是否过滤非诊断实体（药品、设备、科室等），默认True
             
         Returns:
             字典，键为实体类型，值为实体列表（包含text, start, end, confidence）
@@ -163,7 +167,7 @@ class MedicalNERService:
             # 使用规则方法
             entities = self._extract_entities_with_rules(text)
         
-        # 如果需要过滤药品等非诊断实体
+        # 如果需要过滤非诊断实体（药品、设备、科室等）
         if filter_drugs:
             logger.debug("开始过滤非诊断实体")
             entities = self.entity_filter.filter_entities(entities, text)
@@ -376,13 +380,24 @@ class MedicalNERService:
     
     def get_model_info(self) -> Dict[str, Any]:
         """获取模型信息"""
+        # 检测GPU可用性
+        try:
+            import torch
+            gpu_available = torch.cuda.is_available()
+            gpu_device_count = torch.cuda.device_count() if gpu_available else 0
+        except ImportError:
+            gpu_available = False
+            gpu_device_count = 0
+        
         return {
             'model_name': self.model_name,
             'use_model': self.use_model,
             'model_loaded': self.ner_pipeline is not None,
             'entity_types': list(self.entity_type_mapping.keys()) if self.use_model else list(self.medical_patterns.keys()),
             'fallback_available': hasattr(self, 'medical_patterns'),
-            'gpu_enabled': os.getenv('MEDICAL_NER_USE_GPU', 'false').lower() == 'true'
+            'gpu_available': gpu_available,
+            'gpu_device_count': gpu_device_count,
+            'device': 'GPU' if gpu_available and self.use_model else 'CPU'
         }
     
     def get_entity_summary(self, text: str) -> Dict[str, any]:
@@ -444,7 +459,7 @@ class MedicalNERService:
         # 获取未过滤的实体
         original_entities = self.extract_medical_entities(text, filter_drugs=False)
         
-        # 获取过滤后的实体
+        # 获取过滤后的实体（过滤非诊断实体）
         filtered_entities = self.extract_medical_entities(text, filter_drugs=True)
         
         # 生成统计信息

@@ -4,10 +4,10 @@
 
 ## 📋 项目概述
 
-本系统通过向量化技术和大语言模型，为医生输入的纯文本诊断内容提供准确的ICD-10标准编码匹配，支持：
+本系统通过向量化技术和大语言模型，为医生输入的纯文本诊断内容提供准确的ICD-10标准编码匹配。针对中文医学术语的特殊性，采用专门优化的中文text2vec模型，在医学词汇理解方面表现更优。系统支持：
 
 - **多诊断识别**：智能识别复合诊断文本中的多个诊断项，自动过滤药品实体
-- **智能检索**：基于多语言E5模型的语义向量检索，集成层级权重优化
+- **智能检索**：基于中文text2vec模型的语义向量检索，专门优化中文医学词汇，集成层级权重优化
 - **标准化推理**：支持DeepSeek/OpenAI等多种LLM模型，默认deepseek
 - **本地部署**：使用Milvus Lite本地向量数据库，无需外部依赖
 - **增强处理**：集成医学NER、语义边界检测、多维度置信度评估
@@ -18,7 +18,7 @@
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   FastAPI服务   │    │   向量化模型     │    │   Milvus数据库   │
-│   (API接口)     │────│  (E5-Large)     │────│  (向量存储)     │
+│   (API接口)     │────│(Text2Vec-Chinese)│────│  (向量存储)     │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                                              │
          │              ┌─────────────────┐             │
@@ -42,7 +42,7 @@
 ### 核心组件
 
 - **数据层**：37k+ ICD-10编码，支持中文医学术语和层级结构解析
-- **向量化**：`intfloat/multilingual-e5-large-instruct` 模型（1024维）
+- **向量化**：`shibing624/text2vec-base-chinese` 模型（768维），专门针对中文医学词汇优化
 - **向量库**：Milvus Lite本地部署，HNSW索引，支持层级字段
 - **多诊断服务**：集成医学NER的智能诊断识别和分割
 - **医学NER**：基于`lixin12345/chinese-medical-ner`模型的实体识别
@@ -51,6 +51,10 @@
 - **药品过滤**：自动过滤非诊断相关的药品和设备实体
 - **推理层**：DeepSeek/OpenAI LLM，支持多模型切换
 - **API层**：FastAPI，完整的资源生命周期管理
+
+### 🎯 向量化技术栈
+
+**嵌入模型**: `shibing624/text2vec-base-chinese` (768维) - 专为中文医学词汇优化的语义向量模型
 
 ## 🚀 快速开始
 
@@ -298,7 +302,7 @@ rag-project-icd10/
 │   ├── __init__.py
 │   └── icd_models.py                    # Pydantic模型（支持层级和置信度）
 ├── services/                             # 业务服务
-│   ├── embedding_service.py             # 向量化服务（E5-Large）
+│   ├── embedding_service.py             # 向量化服务（Text2Vec-Chinese）
 │   ├── milvus_service.py                # 向量数据库服务（HNSW索引）
 │   ├── llm_service.py                   # LLM服务（多提供商支持）
 │   ├── multi_diagnosis_service.py       # 多诊断处理服务（核心）
@@ -358,13 +362,13 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-3.5-turbo
 
 # 向量化配置
-EMBEDDING_MODEL_NAME=intfloat/multilingual-e5-large-instruct
+EMBEDDING_MODEL_NAME=shibing624/text2vec-base-chinese
 EMBEDDING_DEVICE=auto
 
 # Milvus配置
 MILVUS_MODE=local
 MILVUS_DB_PATH=./db/milvus_icd10.db
-MILVUS_COLLECTION_NAME=icd10_e5
+MILVUS_COLLECTION_NAME=icd10_collection
 
 # API配置
 API_HOST=0.0.0.0
@@ -577,7 +581,7 @@ for d in diagnoses:
 
 ### 性能优化
 
-- **向量维度**：1024维，平衡精度和性能
+- **向量维度**：768维，专门针对中文医学词汇优化，平衡精度和性能
 - **多诊断并发**：支持并行检索多个诊断项
 - **索引优化**：HNSW索引，快速近似搜索
 - **层级权重**：ICD-10三级层级智能加权（1.2x/1.0x/0.8x）
@@ -613,7 +617,7 @@ for d in diagnoses:
 1. **向量化模型加载失败**
    ```bash
    # 检查网络连接，手动下载模型
-   python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-large-instruct')"
+   python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('shibing624/text2vec-base-chinese')"
    
    # 或设置镜像源
    export HF_ENDPOINT=https://hf-mirror.com
@@ -814,7 +818,7 @@ curl -X POST http://localhost:8005/resource/reload
 
 ## 🙏 致谢
 
-- **HuggingFace** - 提供优秀的多语言E5模型
+- **HuggingFace** - 提供优秀的中文text2vec模型
 - **Milvus** - 高性能向量数据库
 - **FastAPI** - 现代化的API框架
 - **DeepSeek** - 优秀的中文大语言模型
